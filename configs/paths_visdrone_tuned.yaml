@@ -1,0 +1,8 @@
+paths:
+  weights: EDA Data/adaptive_rl_sahi/baseline/training_runs/yolo11n_visdrone/weights/best.pt
+  image_root: data/raw/images
+  label_root: data/raw/labels
+  cache_root: data/cache_visdrone
+  dqn_out_dir: runs/dqn_visdrone_tuned
+  infer_out_dir: runs/infer_visdrone_tuned
+  checkpoint: runs/dqn_visdrone_tuned/best.pt

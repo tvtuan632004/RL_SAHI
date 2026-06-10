@@ -51,6 +51,7 @@ def main() -> None:
             iou=float(infer_cfg["iou"]),
             merge_iou=float(infer_cfg["merge_iou"]),
             max_det=int(infer_cfg["max_det"]),
+            max_slices=int(infer_cfg.get("max_slices", 0)),
             device=cfg.optional_str("infer", "device"),
             feature_layers=cfg.feature_layers("infer"),
             min_slice_detections=int(infer_cfg.get("min_slice_detections", 1)),

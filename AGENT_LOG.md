@@ -95,3 +95,75 @@
 **Files:** `.gitignore`, `README.md`, `AGENT_HANDOFF.md`, `AGENT_LOG.md`, `NEXT_STEPS.md`, `.agent-logs/codex.md`.
 **Commands:** `git check-ignore -v data/raw/images/train/example.jpg` -> ignored via `data/raw/`; `git check-ignore -v runs/infer_visdrone/visualizations/example.jpg` -> ignored via `runs/`; `git check-ignore -v data/cache_visdrone/detections/val/example.npz` -> ignored via `data/cache_*/`; `git rev-parse --show-toplevel` -> reported `D:/`, so README warns about the parent repo.
 **Next:** Before pushing, stage only intended project files from `D:\RL-SAHI` and verify with `git status --short`.
+
+## 2026-06-10 - Codex
+
+**Goal:** Inspect the added `EDA Data` folder.
+**Summary:** Read the main EDA reports and metrics under `EDA Data/adaptive_rl_sahi`. The data report shows 457,066 labels across train/val/test, with 285,028 small labels (62.36%). The full-image YOLO baseline has low recall, especially for small objects (small recall 0.0446). The SAHI baseline improves overall recall to 0.2902 and small recall to 0.1583, but with lower precision, supporting adaptive slicing as a justified technical direction.
+**Files:** `EDA Data/adaptive_rl_sahi/README.md`, `outputs/final/data_research_report.md`, `outputs/final/baseline_metrics.json`, `outputs/final/sahi_metrics.json`, `outputs/final/sahi_test_predata_summary.json`, `outputs/final/test_test_analysis_report.md`.
+**Commands:** `Get-Content` on the main EDA reports and metrics -> completed.
+**Next:** Use these EDA numbers in thesis/slide justification and technical discussion for adaptive ROI/SAHI.
+
+## 2026-06-10 - Codex
+
+**Goal:** Add same-model technical tuning configs for better small-object recall.
+**Summary:** Added a separate VisDrone tuned config stack that keeps the same YOLO weight but changes inference calibration and RL environment/reward settings. The tuned config lowers output confidence to 0.15, raises merge IoU to 0.6, allows more slice attempts, uses smaller/scale-aware ROI bounds, allows up to 10 slices, and increases hard-region rewards/empty/overlap penalties. A one-image inference smoke test using the previous checkpoint passed and wrote to the tuned output folder.
+**Files:** `configs/paths_visdrone_tuned.yaml`, `configs/inference_visdrone_tuned.yaml`, `configs/rl_visdrone_tuned.yaml`, `configs/default_visdrone_tuned.yaml`.
+**Commands:** Config load check -> passed; `python scripts/infer.py --config configs/default_visdrone_tuned.yaml --checkpoint runs\dqn_visdrone\best.pt --split val --limit 1` -> passed with 75 boxes and 2 slices.
+**Next:** Train a tuned DQN with `python scripts/train.py --config configs/default_visdrone_tuned.yaml --split train --episodes 30000`, then run tuned validation inference without checkpoint override.
+
+## 2026-06-10 - Codex
+
+**Goal:** Improve slice coverage when DQN repeats/overlaps ROIs.
+**Summary:** Changed inference so an overlapping DQN ROI is rejected and inference continues instead of stopping all slice attempts. Added a density fallback ROI generator that fills remaining slice slots from small/low-confidence detection clusters when the DQN stalls. On `0000006_00611_d_0000002.jpg`, tuned inference changed from 87 boxes with 3 slices to 158 boxes with 10 slices; metadata now records `density_fallback` slices.
+**Files:** `src/rl_sahi/inference/pipeline.py`, `runs/infer_visdrone_tuned/metadata/0000006_00611_d_0000002.json`, `runs/infer_visdrone_tuned/visualizations/0000006_00611_d_0000002.jpg`.
+**Commands:** `python -m py_compile src\rl_sahi\inference\pipeline.py` -> passed; `python scripts/infer.py --config configs/default_visdrone_tuned.yaml --image ...0000006_00611_d_0000002.jpg --split test --no-cache` -> passed with 158 boxes and 10 slices.
+**Next:** Visually inspect the tuned image for false positives; if too noisy, raise `output_conf` slightly or set `min_slice_detections` higher.
+
+## 2026-06-10 - Codex
+
+**Goal:** Reduce visual clutter from too many slices.
+**Summary:** Added an inference-time `max_slices` override so visualization can be limited without retraining the DQN checkpoint. Tuned config now uses `max_slices=5`, `output_conf=0.18`, `min_slice_detections=3`, and `max_slice_attempts=12`. The same test image now produces 120 boxes with 5 slices instead of 158 boxes with 10 slices.
+**Files:** `configs/inference_visdrone_tuned.yaml`, `configs/rl_visdrone_tuned.yaml`, `src/rl_sahi/inference/config.py`, `src/rl_sahi/inference/pipeline.py`, `scripts/infer.py`.
+**Commands:** `python -m py_compile src\rl_sahi\inference\config.py src\rl_sahi\inference\pipeline.py scripts\infer.py` -> passed; tuned single-image inference -> passed with 120 boxes and 5 slices.
+**Next:** Inspect the image; if still cluttered, reduce `infer.max_slices` to 3 or raise `output_conf` to 0.20.
+
+## 2026-06-10 - Codex
+
+**Goal:** Export per-image predicted class statistics.
+**Summary:** Added a summary script that reads inference detection `.txt` files and writes a human-readable class-count report per image, including total boxes plus full-image vs slice-origin counts. Generated the tuned report for current outputs.
+**Files:** `scripts/summarize_predictions.py`, `runs/infer_visdrone_tuned/class_summary.txt`.
+**Commands:** `python -m py_compile scripts\summarize_predictions.py` -> passed; `python scripts\summarize_predictions.py --pred-dir runs\infer_visdrone_tuned\detections --out runs\infer_visdrone_tuned\class_summary.txt` -> wrote report for 11 images.
+**Next:** Re-run the summary script after full validation inference to refresh the report.
+
+## 2026-06-10 - Codex
+
+**Goal:** Store one class-summary text file per inferred image.
+**Summary:** Updated the prediction summary script to also write `class_summaries/<image_id>.txt` files. Each per-image file includes total boxes, class counts, full-image vs slice-origin counts, and a tabular class breakdown.
+**Files:** `scripts/summarize_predictions.py`, `runs/infer_visdrone_tuned/class_summaries/`.
+**Commands:** `python scripts\summarize_predictions.py --pred-dir runs\infer_visdrone_tuned\detections --out runs\infer_visdrone_tuned\class_summary.txt --per-image-dir runs\infer_visdrone_tuned\class_summaries` -> wrote 11 per-image summary files.
+**Next:** Keep `runs/infer_visdrone_tuned/class_summaries` beside visualizations for easy inspection.
+
+## 2026-06-10 - Codex
+
+**Goal:** Make visualization easier to read.
+**Summary:** Removed detection text labels/confidence from visualization images and changed detection boxes to use a fixed color per VisDrone class. ROI slice boxes remain drawn separately. Regenerated the tuned visualization for `0000006_00611_d_0000002.jpg`.
+**Files:** `src/rl_sahi/inference/visualize.py`, `runs/infer_visdrone_tuned/visualizations/0000006_00611_d_0000002.jpg`.
+**Commands:** `python -m py_compile src\rl_sahi\inference\visualize.py scripts\infer.py` -> passed; tuned single-image inference -> passed with 120 boxes and 5 slices.
+**Next:** If a legend is needed, use the per-image class summary `.txt` instead of drawing text on the image.
+
+## 2026-06-10 - Codex
+
+**Goal:** Add a class-color legend for text-free visualizations.
+**Summary:** Updated `summarize_predictions.py` to write `class_color_legend.txt` beside the tuned inference outputs. The legend maps each VisDrone class to its fixed visualization color and RGB hex value.
+**Files:** `scripts/summarize_predictions.py`, `runs/infer_visdrone_tuned/class_color_legend.txt`.
+**Commands:** `python scripts\summarize_predictions.py ... --legend-out runs\infer_visdrone_tuned\class_color_legend.txt` -> wrote the legend.
+**Next:** Keep text off visualization images and use the legend plus per-image summary files for class interpretation.
+
+## 2026-06-10 - Codex
+
+**Goal:** Restore class names on visualization boxes.
+**Summary:** Updated visualization to show only the class name on each detection box, without confidence scores. Per-image summary `.txt` files remain the main detailed count output. Regenerated the tuned test image.
+**Files:** `src/rl_sahi/inference/visualize.py`, `runs/infer_visdrone_tuned/visualizations/0000006_00611_d_0000002.jpg`, `runs/infer_visdrone_tuned/class_summaries/`.
+**Commands:** `python -m py_compile src\rl_sahi\inference\visualize.py scripts\infer.py scripts\summarize_predictions.py` -> passed; tuned single-image inference -> passed with 120 boxes and 5 slices.
+**Next:** Use class-name-only visualization plus per-image summaries for inspection.

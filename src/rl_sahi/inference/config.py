@@ -12,6 +12,7 @@ class InferenceConfig:
     iou: float = 0.7
     merge_iou: float = 0.5
     max_det: int = 3000
+    max_slices: int = 0
     device: str | None = None
     feature_layers: tuple[int, ...] = (10,)
     min_slice_detections: int = 1

@@ -1,0 +1,61 @@
+state:
+  grid_size: 16
+  low_conf_threshold: 0.5
+  proposal_min_conf: 0.01
+  proposal_max_conf: 0.5
+  proposal_peak_conf: 0.25
+  small_area_ratio: 0.01
+  count_norm: 100.0
+  roi_count_norm: 50.0
+  slice_count_norm: 10.0
+  spatial_feature_channels: 4
+
+env:
+  max_steps: 30
+  max_slices: 5
+  initial_slice_fraction: 0.30
+  move_fraction: 0.45
+  zoom_factor: 0.75
+  min_slice_fraction: 0.08
+  max_slice_fraction: 0.40
+  max_roi_area_ratio: 0.18
+  min_scale_gain: 2.2
+  reward_imgsz: 320
+  target_projected_size: 36.0
+  min_projected_size: 12.0
+  max_projected_size: 96.0
+  context_margin: 0.08
+  step_penalty: 0.03
+  empty_slice_penalty: 0.8
+  area_penalty: 0.35
+  detected_overlap_penalty: 1.0
+  new_hard_reward: 3.0
+  hard_density_reward: 1.2
+  stop_target_reward: 1.2
+  stop_early_penalty: 0.8
+  high_conf_threshold: 0.5
+  large_roi_penalty: 2.0
+  low_scale_penalty: 1.0
+  old_slice_overlap_threshold: 0.5
+  old_slice_overlap_penalty: 4.0
+  min_new_hits_to_accept: 1
+
+train:
+  episodes: 30000
+  batch_size: 128
+  replay_size: 50000
+  gamma: 0.95
+  lr: 0.0001
+  min_replay: 512
+  target_update: 200
+  epsilon_start: 1.0
+  epsilon_end: 0.05
+  epsilon_decay_steps: 8000
+  guide_prob: 0.25
+  hidden_dim: 512
+  use_spatial_cnn: true
+  optimize_every: 2
+  preload_cache: true
+  seed: 42
+  log_interval: 25
+  device: ""

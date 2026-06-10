@@ -22,6 +22,19 @@ DEFAULT_CLASS_NAMES = (
     "motor",
 )
 
+CLASS_COLORS = (
+    (255, 80, 80),    # pedestrian
+    (255, 170, 60),   # people
+    (80, 220, 220),   # bicycle
+    (60, 220, 60),    # car
+    (180, 120, 255),  # van
+    (40, 140, 255),   # truck
+    (220, 220, 80),   # tricycle
+    (255, 80, 220),   # awning-tricycle
+    (80, 80, 255),    # bus
+    (220, 160, 40),   # motor
+)
+
 
 def draw_boxes(image: np.ndarray, boxes: np.ndarray, color: tuple[int, int, int], thickness: int = 1) -> None:
     for box in as_boxes(boxes):
@@ -29,13 +42,13 @@ def draw_boxes(image: np.ndarray, boxes: np.ndarray, color: tuple[int, int, int]
         cv2.rectangle(image, (x1, y1), (x2, y2), color, thickness)
 
 
-def class_label(class_id: float, score: float, class_names=DEFAULT_CLASS_NAMES) -> str:
+def class_label(class_id: float, class_names=DEFAULT_CLASS_NAMES) -> str:
     idx = int(class_id)
     if isinstance(class_names, dict):
         name = str(class_names.get(idx, f"class_{idx}"))
     else:
         name = class_names[idx] if 0 <= idx < len(class_names) else f"class_{idx}"
-    return f"{name} {float(score):.2f}"
+    return name
 
 
 def draw_label(
@@ -56,6 +69,13 @@ def draw_label(
     cv2.putText(image, text, (x + 3, y2 - baseline - 2), font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
 
 
+def class_color(class_id: float) -> tuple[int, int, int]:
+    idx = int(class_id)
+    if 0 <= idx < len(CLASS_COLORS):
+        return CLASS_COLORS[idx]
+    return (180, 180, 180)
+
+
 def draw_detections(
     image: np.ndarray,
     boxes: np.ndarray,
@@ -63,20 +83,17 @@ def draw_detections(
     classes: np.ndarray,
     sources: np.ndarray,
     class_names=DEFAULT_CLASS_NAMES,
-    full_color: tuple[int, int, int] = (0, 190, 0),
-    slice_color: tuple[int, int, int] = (255, 120, 0),
 ) -> None:
     boxes = as_boxes(boxes)
     scores = np.asarray(scores, dtype=np.float32).reshape(-1)
     classes = np.asarray(classes, dtype=np.float32).reshape(-1)
-    sources = np.asarray(sources, dtype=np.int32).reshape(-1)
     if len(boxes) == 0:
         return
-    for box, score, cls, source in zip(boxes, scores, classes, sources):
-        color = full_color if int(source) == 0 else slice_color
+    for box, _score, cls in zip(boxes, scores, classes):
+        color = class_color(cls)
         x1, y1, x2, y2 = [int(round(v)) for v in box]
-        cv2.rectangle(image, (x1, y1), (x2, y2), color, 1)
-        draw_label(image, class_label(cls, score, class_names), x1, y1, color)
+        cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
+        draw_label(image, class_label(cls, class_names), x1, y1, color)
 
 
 def save_inference_visual(

@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from ultralytics import YOLO
 
-from rl_sahi.common.boxes import clip_boxes
+from rl_sahi.common.boxes import area, box_from_center, centers, clip_boxes, intersection_matrix
 from rl_sahi.common.cache import (
     DetectionCache,
     detection_cache_is_current,
@@ -144,9 +144,10 @@ def _infer_with_loaded(
     slice_sources_all: list[np.ndarray] = []
     slice_meta: list[dict] = []
 
+    max_slices = int(cfg.max_slices) if cfg.max_slices > 0 else int(env_cfg.max_slices)
     max_attempts = int(cfg.max_slice_attempts) if cfg.max_slice_attempts > 0 else int(env_cfg.max_slices * 2)
     for attempt_idx in range(1, max_attempts + 1):
-        if len(accepted_rois) >= env_cfg.max_slices:
+        if len(accepted_rois) >= max_slices:
             break
         previous_arr = (
             np.stack(attempted_rois).astype(np.float32)
@@ -156,6 +157,8 @@ def _infer_with_loaded(
         env = SliceEnv(det, None, env_cfg=env_cfg, state_cfg=state_cfg, previous_rois=previous_arr)
         roi, actions, info = rollout_one_slice(policy, env, device_t)
         if info.get("stop_due_to_old_overlap", False):
+            attempted_rois.append(roi)
+            rejected_rois.append(roi)
             slice_meta.append(
                 {
                     "attempt_index": attempt_idx,
@@ -169,7 +172,7 @@ def _infer_with_loaded(
                     "detections": 0,
                 }
             )
-            break
+            continue
 
         boxes_i, scores_i, classes_i = run_yolo_on_crop(
             yolo,
@@ -205,6 +208,59 @@ def _infer_with_loaded(
                 "steps": len(actions),
                 "old_slice_overlap": float(info.get("old_slice_overlap", 0.0)),
                 "detections": int(len(boxes_i)),
+            }
+        )
+
+    fallback_rois = _density_fallback_rois(
+        det=det,
+        env_cfg=env_cfg,
+        state_cfg=state_cfg,
+        previous_rois=np.stack(attempted_rois).astype(np.float32)
+        if attempted_rois
+        else np.zeros((0, 4), dtype=np.float32),
+        max_candidates=max_attempts,
+    )
+    for fallback_idx, roi in enumerate(fallback_rois, start=1):
+        if len(accepted_rois) >= max_slices:
+            break
+        if _max_roi_overlap(roi, np.asarray(attempted_rois, dtype=np.float32)) >= env_cfg.old_slice_overlap_threshold:
+            continue
+
+        boxes_i, scores_i, classes_i = run_yolo_on_crop(
+            yolo,
+            image_path,
+            roi,
+            imgsz=cfg.slice_imgsz,
+            conf=cfg.output_conf,
+            iou=cfg.iou,
+            max_det=cfg.max_det,
+            device=cfg.device,
+        )
+        attempted_rois.append(roi)
+        accepted = int(len(boxes_i)) >= int(cfg.min_slice_detections)
+        rejection_reason = None if accepted else ("empty_slice" if len(boxes_i) == 0 else "low_detection_count")
+        slice_index = None
+        if accepted:
+            accepted_rois.append(roi)
+            slice_index = len(accepted_rois)
+            slice_boxes_all.append(boxes_i)
+            slice_scores_all.append(scores_i)
+            slice_classes_all.append(classes_i)
+            slice_sources_all.append(np.ones((len(boxes_i),), dtype=np.int32))
+        else:
+            rejected_rois.append(roi)
+        slice_meta.append(
+            {
+                "attempt_index": len(slice_meta) + 1,
+                "slice_index": slice_index,
+                "accepted": accepted,
+                "rejection_reason": rejection_reason,
+                "roi": [float(x) for x in roi.tolist()],
+                "actions": ["density_fallback"],
+                "steps": 0,
+                "old_slice_overlap": float(_max_roi_overlap(roi, np.asarray(attempted_rois[:-1], dtype=np.float32))),
+                "detections": int(len(boxes_i)),
+                "fallback_index": fallback_idx,
             }
         )
 
@@ -262,6 +318,81 @@ def _infer_with_loaded(
     }
     meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
     return meta
+
+
+def _density_fallback_rois(
+    det: DetectionCache,
+    env_cfg,
+    state_cfg: StateConfig,
+    previous_rois: np.ndarray,
+    max_candidates: int,
+) -> list[np.ndarray]:
+    boxes = np.asarray(det.boxes, dtype=np.float32).reshape(-1, 4)
+    scores = np.asarray(det.scores, dtype=np.float32).reshape(-1)
+    if len(boxes) == 0:
+        return []
+
+    h, w = det.image_shape
+    image_area = max(float(h * w), 1.0)
+    box_area_ratio = area(boxes) / image_area
+    proposal_mask = scores >= state_cfg.proposal_min_conf
+    difficult_mask = (box_area_ratio <= state_cfg.small_area_ratio) | (scores < env_cfg.high_conf_threshold)
+    target_mask = proposal_mask & difficult_mask
+    if not target_mask.any():
+        target_mask = proposal_mask
+    if not target_mask.any():
+        return []
+
+    target_boxes = boxes[target_mask]
+    target_scores = scores[target_mask]
+    target_points = centers(target_boxes)
+    target_area_ratio = box_area_ratio[target_mask]
+
+    min_side = min(h, w) * env_cfg.min_slice_fraction
+    max_side_by_fraction = min(h, w) * env_cfg.max_slice_fraction
+    max_side_by_area = np.sqrt(max(float(h * w) * env_cfg.max_roi_area_ratio, 1.0))
+    max_side = max(min(max_side_by_fraction, max_side_by_area), min_side)
+    base_side = float(np.clip(min(h, w) * env_cfg.initial_slice_fraction, min_side, max_side))
+
+    object_priority = (1.0 - np.clip(target_scores, 0.0, 1.0)).astype(np.float32)
+    object_priority += (target_area_ratio <= state_cfg.small_area_ratio).astype(np.float32) * 0.75
+
+    candidates: list[tuple[float, np.ndarray]] = []
+    seen: set[tuple[int, int]] = set()
+    for point in target_points:
+        key = (int(point[0] // max(base_side * 0.35, 1.0)), int(point[1] // max(base_side * 0.35, 1.0)))
+        if key in seen:
+            continue
+        seen.add(key)
+        roi = box_from_center(float(point[0]), float(point[1]), base_side, det.image_shape)
+        inside = (
+            (target_points[:, 0] >= roi[0])
+            & (target_points[:, 0] <= roi[2])
+            & (target_points[:, 1] >= roi[1])
+            & (target_points[:, 1] <= roi[3])
+        )
+        if not inside.any():
+            continue
+        overlap = _max_roi_overlap(roi, previous_rois)
+        if overlap >= env_cfg.old_slice_overlap_threshold:
+            continue
+        score = float(object_priority[inside].sum())
+        score += float(inside.sum()) * 0.15
+        score -= overlap * 2.0
+        candidates.append((score, roi.astype(np.float32)))
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return [roi for _score, roi in candidates[:max_candidates]]
+
+
+def _max_roi_overlap(roi: np.ndarray, previous_rois: np.ndarray) -> float:
+    previous_rois = np.asarray(previous_rois, dtype=np.float32).reshape(-1, 4)
+    if len(previous_rois) == 0:
+        return 0.0
+    roi = np.asarray(roi, dtype=np.float32).reshape(1, 4)
+    inter = intersection_matrix(roi, previous_rois)[0]
+    current_area = max(float(area(roi)[0]), 1.0)
+    return float(np.clip(inter.max() / current_area, 0.0, 1.0))
 
 
 def _resolve_project_path(path: Path | str, root: Path) -> Path:
@@ -326,6 +457,7 @@ def infer_one_image(
         iou=_value_or_config(infer_cfg, "iou", iou, float),
         merge_iou=_value_or_config(infer_cfg, "merge_iou", merge_iou, float),
         max_det=_value_or_config(infer_cfg, "max_det", max_det, int),
+        max_slices=int(infer_cfg.get("max_slices", 0)),
         device=device if device is not None else project_cfg.optional_str("infer", "device"),
         feature_layers=_feature_layers_or_config(project_cfg, feature_layers),
         min_slice_detections=_value_or_config(infer_cfg, "min_slice_detections", min_slice_detections, int),

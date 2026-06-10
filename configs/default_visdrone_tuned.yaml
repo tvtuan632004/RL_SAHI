@@ -1,0 +1,5 @@
+includes:
+  - paths_visdrone_tuned.yaml
+  - detection.yaml
+  - rl_visdrone_tuned.yaml
+  - inference_visdrone_tuned.yaml
