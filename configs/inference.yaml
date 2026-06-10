@@ -1,0 +1,14 @@
+infer:
+  full_imgsz: 640
+  slice_imgsz: 640
+  full_conf: 0.01
+  output_conf: 0.25
+  iou: 0.7
+  merge_iou: 0.5
+  max_det: 3000
+  min_slice_detections: 1
+  max_slice_attempts: 16
+  device: ""
+  feature_layers:
+    - 10
+  use_cache: true

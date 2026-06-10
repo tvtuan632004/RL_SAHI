@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environments and local settings
+.env
+.venv/
+venv/
+env/
+*.log
+
+# Datasets, generated caches, and experiment outputs
+archive/
+data/raw/
+data/cache/
+data/cache_*/
+outputs/
+runs/
+
+# Images and visual outputs
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.gif
+*.webp
+*.tif
+*.tiff
+*.svg
+
+# Videos and large media
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Model checkpoints and weights
+*.pt
+*.pth
+*.onnx
+*.engine
+!yolo11s.pt
+
+# Local editor files
+.vscode/
+.idea/
