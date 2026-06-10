@@ -50,12 +50,15 @@ def main() -> None:
             output_conf=float(infer_cfg["output_conf"]),
             iou=float(infer_cfg["iou"]),
             merge_iou=float(infer_cfg["merge_iou"]),
+            agnostic_nms_iou=float(infer_cfg.get("agnostic_nms_iou", 0.0)),
+            slice_score_bonus=float(infer_cfg.get("slice_score_bonus", 0.0)),
             max_det=int(infer_cfg["max_det"]),
             max_slices=int(infer_cfg.get("max_slices", 0)),
             device=cfg.optional_str("infer", "device"),
             feature_layers=cfg.feature_layers("infer"),
             min_slice_detections=int(infer_cfg.get("min_slice_detections", 1)),
             max_slice_attempts=int(infer_cfg.get("max_slice_attempts", 0)),
+            class_conf_thresholds=infer_cfg.get("class_conf_thresholds", {}),
         ),
     )
     for image_path in images:

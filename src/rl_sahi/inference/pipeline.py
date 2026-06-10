@@ -19,6 +19,7 @@ from rl_sahi.common.config import ProjectConfig, load_default_config
 from rl_sahi.detection.yolo import detect_one_image, load_yolo
 from rl_sahi.inference.config import InferenceConfig
 from rl_sahi.inference.crops import run_yolo_on_crop
+from rl_sahi.common.nms import nms_numpy
 from rl_sahi.inference.merge import class_aware_nms, save_prediction_txt
 from rl_sahi.inference.rollout import rollout_one_slice
 from rl_sahi.inference.visualize import save_inference_visual
@@ -280,8 +281,16 @@ def _infer_with_loaded(
     sources = np.concatenate(sources_parts, axis=0) if sources_parts else np.zeros((0,), dtype=np.int32)
 
     boxes = clip_boxes(boxes, det.image_shape)
+    pre_filter_count = int(len(boxes))
+    boxes, scores, classes, sources = _apply_class_thresholds(boxes, scores, classes, sources, cfg)
+    class_threshold_count = int(len(boxes))
     keep = class_aware_nms(boxes, scores, classes, cfg.merge_iou)
     boxes, scores, classes, sources = boxes[keep], scores[keep], classes[keep], sources[keep]
+    class_nms_count = int(len(boxes))
+    if cfg.agnostic_nms_iou > 0:
+        keep = _source_aware_agnostic_nms(boxes, scores, sources, cfg.agnostic_nms_iou, cfg.slice_score_bonus)
+        boxes, scores, classes, sources = boxes[keep], scores[keep], classes[keep], sources[keep]
+    agnostic_nms_count = int(len(boxes))
 
     out_dir = Path(out_dir)
     pred_path = out_dir / "detections" / f"{image_path.stem}.txt"
@@ -313,11 +322,67 @@ def _infer_with_loaded(
         "num_rejected_slices": len(rejected_rois),
         "slices": slice_meta,
         "detections": int(len(boxes)),
+        "postprocess": {
+            "pre_filter_detections": pre_filter_count,
+            "after_class_thresholds": class_threshold_count,
+            "after_class_aware_nms": class_nms_count,
+            "after_agnostic_nms": agnostic_nms_count,
+            "output_conf": float(cfg.output_conf),
+            "class_conf_thresholds": _normalized_class_thresholds(cfg),
+            "merge_iou": float(cfg.merge_iou),
+            "agnostic_nms_iou": float(cfg.agnostic_nms_iou),
+            "slice_score_bonus": float(cfg.slice_score_bonus),
+        },
         "prediction_file": str(pred_path),
         "visualization_file": str(viz_path),
     }
     meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
     return meta
+
+
+def _normalized_class_thresholds(cfg: InferenceConfig) -> dict[str, float]:
+    raw = cfg.class_conf_thresholds or {}
+    out: dict[str, float] = {}
+    for key, value in raw.items():
+        try:
+            out[str(int(key))] = float(value)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _threshold_for_class(class_id: float, cfg: InferenceConfig) -> float:
+    thresholds = _normalized_class_thresholds(cfg)
+    return float(thresholds.get(str(int(class_id)), cfg.output_conf))
+
+
+def _apply_class_thresholds(
+    boxes: np.ndarray,
+    scores: np.ndarray,
+    classes: np.ndarray,
+    sources: np.ndarray,
+    cfg: InferenceConfig,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    if len(boxes) == 0:
+        return boxes, scores, classes, sources
+    thresholds = np.asarray([_threshold_for_class(cls, cfg) for cls in classes], dtype=np.float32)
+    keep = np.asarray(scores, dtype=np.float32).reshape(-1) >= thresholds
+    return boxes[keep], scores[keep], classes[keep], sources[keep]
+
+
+def _source_aware_agnostic_nms(
+    boxes: np.ndarray,
+    scores: np.ndarray,
+    sources: np.ndarray,
+    iou_threshold: float,
+    slice_score_bonus: float,
+) -> np.ndarray:
+    if len(boxes) == 0:
+        return np.zeros((0,), dtype=np.int64)
+    adjusted_scores = np.asarray(scores, dtype=np.float32).reshape(-1).copy()
+    adjusted_scores += (np.asarray(sources, dtype=np.int32).reshape(-1) > 0).astype(np.float32) * float(slice_score_bonus)
+    keep = nms_numpy(boxes, adjusted_scores, iou_threshold)
+    return keep[np.argsort(scores[keep])[::-1]].astype(np.int64)
 
 
 def _density_fallback_rois(
@@ -433,11 +498,15 @@ def infer_one_image(
     output_conf: float | None = None,
     iou: float | None = None,
     merge_iou: float | None = None,
+    agnostic_nms_iou: float | None = None,
+    slice_score_bonus: float | None = None,
     max_det: int | None = None,
+    max_slices: int | None = None,
     device: str | None = None,
     feature_layers: tuple[int, ...] | list[int] | str | None = None,
     min_slice_detections: int | None = None,
     max_slice_attempts: int | None = None,
+    class_conf_thresholds: dict | None = None,
     config: ProjectConfig | Path | str | None = None,
 ) -> dict:
     project_cfg = config if isinstance(config, ProjectConfig) else load_default_config(config)
@@ -456,12 +525,21 @@ def infer_one_image(
         output_conf=_value_or_config(infer_cfg, "output_conf", output_conf, float),
         iou=_value_or_config(infer_cfg, "iou", iou, float),
         merge_iou=_value_or_config(infer_cfg, "merge_iou", merge_iou, float),
+        agnostic_nms_iou=float(infer_cfg.get("agnostic_nms_iou", 0.0))
+        if agnostic_nms_iou is None
+        else float(agnostic_nms_iou),
+        slice_score_bonus=float(infer_cfg.get("slice_score_bonus", 0.0))
+        if slice_score_bonus is None
+        else float(slice_score_bonus),
         max_det=_value_or_config(infer_cfg, "max_det", max_det, int),
-        max_slices=int(infer_cfg.get("max_slices", 0)),
+        max_slices=int(infer_cfg.get("max_slices", 0)) if max_slices is None else int(max_slices),
         device=device if device is not None else project_cfg.optional_str("infer", "device"),
         feature_layers=_feature_layers_or_config(project_cfg, feature_layers),
         min_slice_detections=_value_or_config(infer_cfg, "min_slice_detections", min_slice_detections, int),
         max_slice_attempts=_value_or_config(infer_cfg, "max_slice_attempts", max_slice_attempts, int),
+        class_conf_thresholds=infer_cfg.get("class_conf_thresholds", {})
+        if class_conf_thresholds is None
+        else class_conf_thresholds,
     )
     inferencer = AdaptiveSahiInferencer(weights=weights, checkpoint=checkpoint, cfg=cfg)
     return inferencer.infer_image(

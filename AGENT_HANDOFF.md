@@ -30,6 +30,8 @@ Maintain shared project context for AI agents working on this RL-SAHI repository
 - 2026-06-10 Codex: Updated visualization to hide text labels/confidence and draw detection boxes with fixed per-class colors.
 - 2026-06-10 Codex: Added `runs/infer_visdrone_tuned/class_color_legend.txt` to map class colors for text-free visualizations.
 - 2026-06-10 Codex: Restored visualization labels as class-name-only text on each box, without confidence scores.
+- 2026-06-10 Codex: Added tuned post-processing for duplicate/wrong-class reduction: class-wise confidence thresholds and source-aware class-agnostic NMS.
+- 2026-06-10 Codex: Ran tuned inference on 20 validation images and refreshed combined/per-image class summaries.
 
 ## Important Decisions
 - Use repo-root Markdown files as the shared memory layer so Codex, Gemini, Claude, and other agents can all read them.
@@ -61,6 +63,7 @@ Maintain shared project context for AI agents working on this RL-SAHI repository
 - `configs/default_visdrone.yaml`: RL-SAHI config entrypoint for the VisDrone detector workflow.
 - `configs/paths_visdrone_tuned.yaml`: Same VisDrone detector weight with separate tuned DQN/inference output folders.
 - `configs/inference_visdrone_tuned.yaml`: Tuned output confidence, higher merge IoU, accepted-slice minimum, attempt cap, and inference-time `max_slices` cap.
+- `src/rl_sahi/inference/config.py`: Inference config now supports class-wise thresholds, class-agnostic NMS IoU, and slice score bonus.
 - `configs/rl_visdrone_tuned.yaml`: More steps/slices, smaller ROI bounds, stronger hard-region reward, and stronger empty/overlap penalties.
 - `configs/default_visdrone_tuned.yaml`: Entry point for the tuned same-model workflow.
 - `scripts/train_yolo.py`: Fine-tunes YOLO on the prepared VisDrone dataset.
@@ -106,6 +109,8 @@ Maintain shared project context for AI agents working on this RL-SAHI repository
 - `python scripts/infer.py --config configs/default_visdrone_tuned.yaml --checkpoint runs\dqn_visdrone\best.pt --split val --limit 1`: Passed; tuned inference settings produced 75 boxes and 2 slices for the first validation image.
 - `python scripts/infer.py --config configs/default_visdrone_tuned.yaml --image ...0000006_00611_d_0000002.jpg --split test --no-cache`: Passed after density fallback; produced 158 boxes and 10 slices.
 - `python scripts/infer.py --config configs/default_visdrone_tuned.yaml --image ...0000006_00611_d_0000002.jpg --split test --no-cache`: Passed after slice cap; produced 120 boxes and 5 slices.
+- `python scripts/infer.py --config configs/default_visdrone_tuned.yaml --image ...0000006_00611_d_0000002.jpg --split test --no-cache`: Passed after post-processing refinement; produced 85 boxes and 5 slices from 155 pre-filter boxes.
+- `python scripts/infer.py --config configs/default_visdrone_tuned.yaml --split val --limit 20`: Passed; output folder now includes 20 validation images plus the earlier single test image.
 
 ## Known Issues / Risks
 - `D:\RL-SAHI` is inside a parent Git repo rooted at `D:/`; do not run broad `git add .` from the parent unless that is intentional.

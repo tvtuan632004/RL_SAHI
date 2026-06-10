@@ -120,6 +120,22 @@ Next recommended action: run full validation inference with `python scripts/infe
 
 ## 2026-06-10 - Codex
 
+**Goal:** Clean duplicate/wrong-class detections.
+**Summary:** Added post-processing refinement: class-wise thresholds, class-aware NMS, then source-aware class-agnostic NMS. Test image final detections dropped from 120 to 85 boxes with same 5 slices.
+**Files:** `configs/inference_visdrone_tuned.yaml`, `src/rl_sahi/inference/config.py`, `src/rl_sahi/inference/pipeline.py`, `scripts/infer.py`.
+**Commands:** Compile, tuned single-image inference, and summary refresh passed.
+**Next:** Tune `agnostic_nms_iou` and class thresholds based on visual quality.
+
+## 2026-06-10 - Codex
+
+**Goal:** Run 20-image tuned smoke test.
+**Summary:** Tuned validation inference completed for 20 images and class summaries were refreshed. The tuned output folder now contains 21 summarized images including one earlier test image.
+**Files:** `runs/infer_visdrone_tuned/`.
+**Commands:** `python scripts/infer.py --config configs/default_visdrone_tuned.yaml --split val --limit 20` -> passed.
+**Next:** Review visualization quality across the 20 images.
+
+## 2026-06-10 - Codex
+
 **Goal:** Prepare the repo for GitHub upload.
 **Summary:** Expanded `.gitignore` for image/media files, raw datasets, generated caches, outputs, runs, and model artifacts. Added a Vietnamese root `README.md` with setup, GPU verification, data preparation, VisDrone workflow, default workflow notes, and Git upload guidance. Verified representative raw image, generated visualization, and cache paths are ignored. Noted that `git rev-parse --show-toplevel` reports `D:/`, so staging should be done carefully.
 **Files:** `.gitignore`, `README.md`, `AGENT_LOG.md`, `NEXT_STEPS.md`, `AGENT_HANDOFF.md`, `.agent-logs/codex.md`.

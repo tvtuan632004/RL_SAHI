@@ -167,3 +167,19 @@
 **Files:** `src/rl_sahi/inference/visualize.py`, `runs/infer_visdrone_tuned/visualizations/0000006_00611_d_0000002.jpg`, `runs/infer_visdrone_tuned/class_summaries/`.
 **Commands:** `python -m py_compile src\rl_sahi\inference\visualize.py scripts\infer.py scripts\summarize_predictions.py` -> passed; tuned single-image inference -> passed with 120 boxes and 5 slices.
 **Next:** Use class-name-only visualization plus per-image summaries for inspection.
+
+## 2026-06-10 - Codex
+
+**Goal:** Reduce duplicate boxes and wrong-class overlaps in tuned inference.
+**Summary:** Added class-wise confidence thresholds and class-agnostic/source-aware NMS to post-processing. The tuned image `0000006_00611_d_0000002.jpg` now reduces from 155 pre-filter boxes to 85 final boxes while keeping 5 slices. Metadata records post-processing counts.
+**Files:** `configs/inference_visdrone_tuned.yaml`, `src/rl_sahi/inference/config.py`, `src/rl_sahi/inference/pipeline.py`, `scripts/infer.py`, `runs/infer_visdrone_tuned/metadata/0000006_00611_d_0000002.json`.
+**Commands:** `python -m py_compile src\rl_sahi\inference\config.py src\rl_sahi\inference\pipeline.py scripts\infer.py` -> passed; tuned single-image inference -> passed with 85 boxes and 5 slices; summary script rerun passed.
+**Next:** Visually inspect whether duplicate and wrong-class boxes improved. If duplicates remain, lower `agnostic_nms_iou`; if true objects disappear, raise it slightly.
+
+## 2026-06-10 - Codex
+
+**Goal:** Smoke test tuned inference on 20 validation images.
+**Summary:** Ran tuned inference on the first 20 validation images after post-processing refinement. All 20 completed successfully, mostly using 5 slices per image. Refreshed class summaries; the output folder currently summarizes 21 images because it also contains the earlier single test image.
+**Files:** `runs/infer_visdrone_tuned/visualizations/`, `runs/infer_visdrone_tuned/detections/`, `runs/infer_visdrone_tuned/metadata/`, `runs/infer_visdrone_tuned/class_summary.txt`, `runs/infer_visdrone_tuned/class_summaries/`.
+**Commands:** `python scripts/infer.py --config configs/default_visdrone_tuned.yaml --split val --limit 20` -> passed; `python scripts\summarize_predictions.py ...` -> refreshed combined and per-image summaries.
+**Next:** Inspect several visualizations and tune `agnostic_nms_iou`, `output_conf`, or class thresholds if duplicates/wrong classes remain.

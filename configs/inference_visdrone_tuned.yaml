@@ -5,10 +5,23 @@ infer:
   output_conf: 0.18
   iou: 0.7
   merge_iou: 0.6
+  agnostic_nms_iou: 0.45
+  slice_score_bonus: 0.02
   max_det: 3000
   max_slices: 5
   min_slice_detections: 3
   max_slice_attempts: 12
+  class_conf_thresholds:
+    0: 0.18  # pedestrian
+    1: 0.18  # people
+    2: 0.22  # bicycle
+    3: 0.18  # car
+    4: 0.25  # van
+    5: 0.25  # truck
+    6: 0.22  # tricycle
+    7: 0.24  # awning-tricycle
+    8: 0.25  # bus
+    9: 0.18  # motor
   device: ""
   feature_layers:
     - 10
